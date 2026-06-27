@@ -1,0 +1,81 @@
+/* Connect Specific Styles */
+.apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 2rem;
+  margin-top: 3rem;
+}
+.app-card {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 3rem;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+.app-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(124, 58, 237, 0.2);
+}
+.app-icon-wrapper {
+  width: 5rem;
+  height: 5rem;
+  background: var(--bg-main);
+  border-radius: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+}
+.app-card:hover .app-icon-wrapper {
+  background: var(--primary-soft);
+  color: var(--primary);
+  transform: scale(1.1);
+}
+.app-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+.app-desc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+  line-height: 1.5;
+}
+.connect-btn {
+  width: 100%;
+  padding: 0.875rem;
+  background: var(--bg-main);
+  color: var(--text-muted);
+  border: none;
+  border-radius: 1rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.app-card:hover .connect-btn {
+  background: var(--primary);
+  color: white;
+  box-shadow: var(--shadow-primary);
+}
+
+.search-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4rem;
+}
+.search-header h2 {
+  font-size: 2.25rem;
+  font-weight: 700;
+}
