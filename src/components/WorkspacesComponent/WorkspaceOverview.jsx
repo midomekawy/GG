@@ -18,11 +18,19 @@ import SpacesImg from "../../assets/images/spacesimg.png";
 import ProductivityImg from "../../assets/images/productivityimg.png";
 import { useWorkspace } from "../../context/WorkspaceContext";
 import { useUser } from "../../context/UserContext";
+import { useSpaces } from "../../context/SpacesContext";
+import { useTasks } from "../../context/TasksContext";
 import {
   getApiErrorMessage,
   getWorkspaceDashboard,
   parseWorkspaceDashboard,
 } from "../../services/api";
+
+function getFirstSpaceIdForWorkspace(spaces, workspaceId) {
+  if (!workspaceId) return null;
+  const match = spaces.find((s) => String(s.workspaceId) === String(workspaceId));
+  return match?.id ?? null;
+}
 
 const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -115,10 +123,23 @@ const WorkspaceOverview = () => {
   const navigate = useNavigate();
   const { displayName } = useUser();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const { spaces, activeSpaceId } = useSpaces();
+  const { tasks, fetchTasks } = useTasks();
   const [dashboard, setDashboard] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [taskView, setTaskView] = useState("list");
+
+  // Load tasks for the active workspace so the dashboard can fall back to local data
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const resolvedSpaceId = activeSpaceId || getFirstSpaceIdForWorkspace(spaces, activeWorkspaceId);
+    if (!resolvedSpaceId) return;
+    const workspaceTasks = tasks.filter((t) => String(t.workspaceId) === String(activeWorkspaceId));
+    if (workspaceTasks.length === 0) {
+      fetchTasks(activeWorkspaceId, resolvedSpaceId, { PageNumber: 1, PageSize: 50 });
+    }
+  }, [activeWorkspaceId, activeSpaceId, spaces, tasks, fetchTasks]);
 
   useEffect(() => {
     if (!activeWorkspaceId) {
@@ -150,46 +171,86 @@ const WorkspaceOverview = () => {
     };
   }, [activeWorkspaceId]);
 
+  const workspaceTasks = useMemo(() => {
+    if (!activeWorkspaceId) return [];
+    return tasks.filter((t) => String(t.workspaceId) === String(activeWorkspaceId));
+  }, [tasks, activeWorkspaceId]);
+
+  const workspaceSpaces = useMemo(() => {
+    if (!activeWorkspaceId) return [];
+    return spaces.filter((s) => String(s.workspaceId) === String(activeWorkspaceId));
+  }, [spaces, activeWorkspaceId]);
+
   const weeklySeries = useMemo(
-    () => pickWeeklySeries(dashboard),
+    () => pickWeeklySeries(dashboard) ?? [],
     [dashboard]
   );
-  const priorityTasks = useMemo(
-    () => pickPriorityTasks(dashboard),
-    [dashboard]
-  );
-  const recentActivities = useMemo(
-    () => pickRecentActivity(dashboard),
-    [dashboard]
-  );
+  const priorityTasks = useMemo(() => {
+    const apiTasks = pickPriorityTasks(dashboard);
+    if (apiTasks.length > 0) return apiTasks;
+    // Fallback: use local high-priority or incomplete tasks
+    return workspaceTasks
+      .filter(
+        (t) =>
+          t.priority === "high" ||
+          t.priority === "urgent" ||
+          t.priority === 3 ||
+          t.priority === 2 ||
+          (t.status !== "done" && t.status !== "completed" && t.status !== 2)
+      )
+      .slice(0, 5);
+  }, [dashboard, workspaceTasks]);
+  const recentActivities = useMemo(() => {
+    const apiActivities = pickRecentActivity(dashboard);
+    if (apiActivities.length > 0) return apiActivities;
+    // Fallback: build activity feed from local tasks sorted by updatedAt
+    return workspaceTasks
+      .slice()
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+      .slice(0, 6)
+      .map((t) => ({
+        description: `Task "${t.title || "Untitled"}" updated`,
+        time: t.updatedAt || t.createdAt || "",
+        color: t.status === "done" || t.status === 2 ? "#10b981" : "#8b5cf6",
+      }));
+  }, [dashboard, workspaceTasks]);
+
+  const localCompletedTasks = workspaceTasks.filter(
+    (t) => t.status === 'done' || t.status === 'completed' || t.status === 2
+  ).length;
 
   const stats = useMemo(() => {
     const d = dashboard;
-    return {
-      totalTasks:
-        d.totalTasks ??
-        d.TotalTasks ??
-        d.taskCount ??
-        d.TaskCount ??
-        "—",
-      focusHours:
-        d.focusHoursThisWeek ??
-        d.weeklyFocusHours ??
-        d.FocusHours ??
-        d.totalFocusHours ??
-        "—",
-      activeSpaces:
-        d.activeSpaces ??
-        d.ActiveSpaces ??
-        d.spacesCount ??
-        "—",
-      productivity:
-        d.productivityScore ??
-        d.ProductivityScore ??
-        d.score ??
-        "—",
-    };
-  }, [dashboard]);
+    const totalTasks =
+      d.totalTasks ??
+      d.TotalTasks ??
+      d.taskCount ??
+      d.TaskCount ??
+      workspaceTasks.length ??
+      "—";
+    const focusHours =
+      d.focusHoursThisWeek ??
+      d.weeklyFocusHours ??
+      d.FocusHours ??
+      d.totalFocusHours ??
+      d.focusTimeHours ??
+      "—";
+    const activeSpaces =
+      d.activeSpaces ??
+      d.ActiveSpaces ??
+      d.spacesCount ??
+      d.SpacesCount ??
+      workspaceSpaces.length ??
+      "—";
+    const productivity =
+      d.productivityScore ??
+      d.ProductivityScore ??
+      d.score ??
+      (workspaceTasks.length > 0
+        ? Math.round((localCompletedTasks / workspaceTasks.length) * 100)
+        : "—");
+    return { totalTasks, focusHours, activeSpaces, productivity };
+  }, [dashboard, workspaceTasks.length, workspaceSpaces.length, localCompletedTasks]);
 
   const greetingName = displayName?.trim() || "there";
 

@@ -1,4 +1,4 @@
-import { BellRing, Check, Music2Icon, Pause, XIcon } from "lucide-react";
+import { BellRing, Check, Music2Icon, MusicIcon, Pause, Volume2, VolumeX, XIcon } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import './focusstyles.css';
 import { tooltipClasses } from "@mui/material/Tooltip";
@@ -9,6 +9,7 @@ import { useSpaces } from "../../context/SpacesContext";
 import { useTasks } from "../../context/TasksContext";
 import { focusAPI } from "../../services/api";
 import toast from "react-hot-toast";
+import useAmbientSound from "./AmbientSound";
 
 const InFocusMode = ()=>{
     const navigate = useNavigate();
@@ -20,6 +21,9 @@ const InFocusMode = ()=>{
     const [timeLeft, setTimeLeft] = useState(25 * 60); // 25 minutes in seconds
     const [isPaused, setIsPaused] = useState(false);
     const [sessionData, setSessionData] = useState(null);
+    const [soundEnabled, setSoundEnabled] = useState(true);
+    const [soundLabel, setSoundLabel] = useState('');
+    const { play, stop } = useAmbientSound();
     
     // Load session data from localStorage
     useEffect(() => {
@@ -28,6 +32,11 @@ const InFocusMode = ()=>{
             const session = JSON.parse(savedSession);
             setSessionData(session);
             setTimeLeft(session.duration * 60);
+            const soundName = session.sound || 'rainforest';
+            setSoundLabel(soundName);
+            if (soundEnabled && !isPaused) {
+                play(soundName);
+            }
         }
     }, []);
 
@@ -87,6 +96,20 @@ const InFocusMode = ()=>{
         }
         return () => clearInterval(interval);
     }, [isPaused, timeLeft, handleEndFocus]);
+
+    // Pause/resume ambient sound when focus is paused or resumed
+    useEffect(() => {
+        if (!sessionData?.sound || soundLabel !== sessionData.sound) return;
+        if (isPaused || !soundEnabled) {
+            stop();
+        } else {
+            play(sessionData.sound);
+        }
+    }, [isPaused, soundEnabled, sessionData, soundLabel, play, stop]);
+
+    const toggleSound = () => {
+        setSoundEnabled(prev => !prev);
+    };
 
     const handlePauseFocus = async () => {
         setIsPaused(true);
@@ -168,7 +191,15 @@ const InFocusMode = ()=>{
                 <button onClick={handlePauseFocus} style={{backgroundColor:'#5b10bd',color:'white'}}><span><Pause size={18}/></span>Pause Focus</button>
                 <button onClick={handleExitFocus} style={{backgroundColor:'white',color:'#566375',border:'1px solid #aaaa'}}><span><XIcon size={18}/></span> Exit Focus</button>
             </div>
-            <div className="music" style={{position:'absolute',right:'100px',bottom:'10px',color:'#566375',cursor:'pointer'}}><span><Music2Icon size={30}/></span></div>
+            <div
+                className="music"
+                style={{position:'absolute',right:'100px',bottom:'10px',color:'#566375',cursor:'pointer',display:'flex',alignItems:'center',gap:'8px'}}
+                onClick={toggleSound}
+                title={soundEnabled ? 'Mute ambient sound' : 'Play ambient sound'}
+            >
+                <span>{soundEnabled ? <Volume2 size={30}/> : <VolumeX size={30}/>}</span>
+                <span style={{fontSize:'14px',textTransform:'capitalize'}}>{soundEnabled ? soundLabel : 'Muted'}</span>
+            </div>
             {openPauseFocus && <PauseFocus setOpenPauseFocus={setOpenPauseFocus} onResumeFocus={handleResumeFocus} />}
         </div>
     )

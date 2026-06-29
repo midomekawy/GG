@@ -51,6 +51,8 @@ function normalizeMemberRow(m) {
       m.id ??
       ""
   );
+  const permissions = m.permissions ?? m.Permissions ?? [];
+  const role = m.role ?? m.Role ?? detectRole(permissions);
   return {
     memberUserId,
     email: m.email ?? m.Email ?? "",
@@ -63,6 +65,8 @@ function normalizeMemberRow(m) {
       m.Email ??
       "Member",
     avatar: m.avatarUrl ?? m.AvatarUrl ?? PersonImg,
+    role,
+    permissions,
   };
 }
 
@@ -93,6 +97,53 @@ const COMMON_PERMISSIONS = [
   { value: "DeleteNotes", label: "Delete notes" },
 ];
 
+const ROLES = [
+  { value: "owner", label: "Owner" },
+  { value: "admin", label: "Admin" },
+  { value: "member", label: "Member" },
+];
+
+const ROLE_PERMISSIONS = {
+  owner: COMMON_PERMISSIONS.map((p) => p.value),
+  admin: [
+    "ViewWorkspace",
+    "EditWorkspace",
+    "ManageMembers",
+    "ViewTasks",
+    "CreateTasks",
+    "EditTasks",
+    "DeleteTasks",
+    "ViewSpaces",
+    "CreateSpaces",
+    "EditSpaces",
+    "DeleteSpaces",
+    "ViewNotes",
+    "CreateNotes",
+    "EditNotes",
+    "DeleteNotes",
+  ],
+  member: [
+    "ViewWorkspace",
+    "ViewTasks",
+    "CreateTasks",
+    "EditTasks",
+    "ViewSpaces",
+    "ViewNotes",
+    "CreateNotes",
+    "EditNotes",
+  ],
+};
+
+function detectRole(permissions) {
+  if (!Array.isArray(permissions) || permissions.length === 0) return "member";
+  const perms = new Set(permissions);
+  const isOwner = ROLE_PERMISSIONS.owner.every((p) => perms.has(p));
+  if (isOwner) return "owner";
+  const isAdmin = ROLE_PERMISSIONS.admin.every((p) => perms.has(p));
+  if (isAdmin) return "admin";
+  return "member";
+}
+
 const WorkspaceSettings = () => {
   const navigate = useNavigate();
   const { activeWorkspaceId, setActiveWorkspace } = useWorkspace();
@@ -118,6 +169,7 @@ const WorkspaceSettings = () => {
   const [permTarget, setPermTarget] = useState(null);
   const [permList, setPermList] = useState([]);
   const [permLoading, setPermLoading] = useState(false);
+  const [selectedRole, setSelectedRole] = useState("member");
   const [newPerm, setNewPerm] = useState("");
 
   const loadWorkspace = useCallback(async () => {
@@ -202,19 +254,49 @@ const WorkspaceSettings = () => {
 
   async function handleInvite() {
     if (!activeWorkspaceId) return;
-    const { value: email } = await Swal.fire({
+
+    const { value: formValues } = await Swal.fire({
       title: "Invite member",
-      input: "email",
+      html: `
+        <input id="swal-email" class="swal2-input" type="email" placeholder="Email address">
+        <select id="swal-role" class="swal2-input" style="margin-top:12px;width:auto;min-width:200px;">
+          <option value="member">Member</option>
+          <option value="admin">Admin</option>
+          <option value="owner">Owner</option>
+        </select>
+      `,
       showCancelButton: true,
       confirmButtonColor: "#5e2ec4",
+      focusConfirm: false,
+      preConfirm: () => {
+        const email = document.getElementById('swal-email').value;
+        const role = document.getElementById('swal-role').value;
+        if (!email || !email.includes('@')) {
+          Swal.showValidationMessage('Please enter a valid email');
+          return false;
+        }
+        return { email, role };
+      }
     });
-    if (!email) return;
+
+    if (!formValues) return;
+    const { email, role } = formValues;
     try {
-      await addWorkspaceMember(activeWorkspaceId, {
+      const res = await addWorkspaceMember(activeWorkspaceId, {
         "Email": String(email).trim(),
       });
       await loadWorkspace();
-      await Swal.fire({ icon: "success", text: "Member invited." });
+
+      // Apply role permissions to the newly invited member if we can determine their user id
+      const newMember = parseMembersResponse(res)[0] || users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      if (newMember?.memberUserId) {
+        await updateMemberPermissions(activeWorkspaceId, newMember.memberUserId, {
+          permissions: ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.member,
+        });
+      }
+
+      await loadWorkspace();
+      await Swal.fire({ icon: "success", text: `Member invited as ${role}.` });
     } catch (e) {
       await Swal.fire({ icon: "error", text: getApiErrorMessage(e) });
     }
@@ -258,9 +340,12 @@ const WorkspaceSettings = () => {
         member.memberUserId
       );
       const list = extractPermissionsPayload(res);
-      setPermList(Array.isArray(list) ? [...list] : []);
+      const perms = Array.isArray(list) ? [...list] : [];
+      setPermList(perms);
+      setSelectedRole(detectRole(perms));
     } catch {
       setPermList([]);
+      setSelectedRole("member");
     } finally {
       setPermLoading(false);
     }
@@ -270,11 +355,12 @@ const WorkspaceSettings = () => {
     if (!activeWorkspaceId || !permTarget?.memberUserId) return;
     setPermLoading(true);
     try {
+      const permissionsToSave = ROLE_PERMISSIONS[selectedRole] || ROLE_PERMISSIONS.member;
       await updateMemberPermissions(activeWorkspaceId, permTarget.memberUserId, {
-        permissions: permList,
+        permissions: permissionsToSave,
       });
       setPermOpen(false);
-      await Swal.fire({ icon: "success", text: "Permissions saved." });
+      await Swal.fire({ icon: "success", text: `Role updated to ${ROLES.find(r => r.value === selectedRole)?.label || selectedRole}.` });
     } catch (e) {
       await Swal.fire({ icon: "error", text: getApiErrorMessage(e) });
     } finally {
@@ -635,7 +721,7 @@ const WorkspaceSettings = () => {
                     letterSpacing: "0.05em",
                   }}
                 >
-                  PERMISSIONS
+                  ROLE
                 </th>
                 <th
                   style={{
@@ -713,9 +799,10 @@ const WorkspaceSettings = () => {
                         border: "1px solid #e2e8f0",
                         background: "#fff",
                         cursor: "pointer",
+                        textTransform: "capitalize",
                       }}
                     >
-                      Edit
+                      {user.role || "Member"}
                     </button>
                   </td>
                   <td style={{ padding: "16px 24px" }}>
@@ -942,7 +1029,7 @@ const WorkspaceSettings = () => {
 
       <Dialog open={permOpen} onClose={() => setPermOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>
-          Permissions{permTarget?.name ? ` — ${permTarget.name}` : ""}
+          Member Role{permTarget?.name ? ` — ${permTarget.name}` : ""}
         </DialogTitle>
         <DialogContent>
           {permLoading ? (
@@ -950,108 +1037,56 @@ const WorkspaceSettings = () => {
           ) : (
             <>
               <p style={{ fontSize: "14px", color: "#64748b", marginBottom: "16px" }}>
-                Choose the permissions for this member. You can also add custom permission keys.
+                Choose a role for this member. Each role has a predefined set of permissions.
               </p>
 
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                  display: "flex",
+                  flexDirection: "column",
                   gap: "10px",
                   marginBottom: "16px",
                 }}
               >
-                {COMMON_PERMISSIONS.map((perm) => (
+                {ROLES.map((role) => (
                   <label
-                    key={perm.value}
+                    key={role.value}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 10px",
-                      borderRadius: "8px",
+                      gap: "12px",
+                      padding: "12px 14px",
+                      borderRadius: "10px",
                       border: "1px solid #e2e8f0",
                       cursor: "pointer",
-                      fontSize: "14px",
+                      fontSize: "15px",
                       color: "#0f172a",
-                      background: permList.includes(perm.value) ? "#f5f3ff" : "#fff",
+                      background: selectedRole === role.value ? "#f5f3ff" : "#fff",
+                      borderColor: selectedRole === role.value ? "#8b5cf6" : "#e2e8f0",
                     }}
                   >
                     <input
-                      type="checkbox"
-                      checked={permList.includes(perm.value)}
-                      onChange={() => {
-                        if (permList.includes(perm.value)) {
-                          removePermission(perm.value);
-                        } else {
-                          addPermission(perm.value);
-                        }
-                      }}
+                      type="radio"
+                      name="member-role"
+                      value={role.value}
+                      checked={selectedRole === role.value}
+                      onChange={() => setSelectedRole(role.value)}
                     />
-                    {perm.label}
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      <span style={{ fontWeight: 600 }}>{role.label}</span>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>
+                        {role.value === "owner" && "Full access to workspace, members, and settings."}
+                        {role.value === "admin" && "Can manage tasks, spaces, notes, and members except deleting the workspace."}
+                        {role.value === "member" && "Can view and create tasks, spaces, and notes."}
+                      </span>
+                    </div>
                   </label>
                 ))}
               </div>
 
-              {permList.filter((p) => !COMMON_PERMISSIONS.some((c) => c.value === p)).length > 0 && (
-                <div style={{ marginBottom: "16px" }}>
-                  <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>Custom permissions</p>
-                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                    {permList
-                      .filter((p) => !COMMON_PERMISSIONS.some((c) => c.value === p))
-                      .map((p) => (
-                        <li
-                          key={p}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "6px 0",
-                            fontSize: "14px",
-                          }}
-                        >
-                          <code style={{ color: "#475569" }}>{p}</code>
-                          <button
-                            type="button"
-                            onClick={() => removePermission(p)}
-                            style={{
-                              border: "none",
-                              background: "none",
-                              color: "#dc2626",
-                              cursor: "pointer",
-                              fontSize: "13px",
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              )}
-
-              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                <input
-                  value={newPerm}
-                  onChange={(e) => setNewPerm(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addPermission();
-                    }
-                  }}
-                  placeholder="Custom permission key"
-                  style={{
-                    flex: 1,
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "1px solid #cbd5e1",
-                  }}
-                />
-                <Button variant="outlined" onClick={addPermission} type="button">
-                  Add
-                </Button>
-              </div>
+              <p style={{ fontSize: "13px", color: "#94a3b8" }}>
+                Permissions: {permList.length > 0 ? permList.join(", ") : "None"}
+              </p>
             </>
           )}
         </DialogContent>

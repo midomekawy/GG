@@ -1,7 +1,7 @@
 import { BellOffIcon, BirdIcon, ChevronDown, ChevronUp, CoffeeIcon, icons, PenIcon, PlayIcon, SquareActivity, Trees, Waves, XIcon } from 'lucide-react';
 import '../WorkspacesComponent/workSpaceStyle.css';
 import './focusstyles.css';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useSpaces } from '../../context/SpacesContext';
@@ -21,6 +21,7 @@ const Setup = ({ setOpenFocusMode }) => {
         blockNotifications:false,
     });
     const [openSoundbox, setOpenSoundbox] = useState(false);
+    const [openTaskBox, setOpenTaskBox] = useState(false);
     const [isStarting, setIsStarting] = useState(false);
     
     const sounds = [
@@ -31,8 +32,17 @@ const Setup = ({ setOpenFocusMode }) => {
     ];
     const [selectedSound, setSelectedSound] = useState({name:'Rainforest',value:'rainforest',icon:<Trees/>});
 
-    // Get active task (first incomplete task)
-    const activeTask = tasks?.find(t => t.status !== 'done' && t.status !== 'completed');
+    // Get incomplete tasks for the active space and allow user to select one
+    const incompleteTasks = tasks?.filter(t => t.status !== 'done' && t.status !== 'completed') || [];
+    const [selectedTask, setSelectedTask] = useState(() => incompleteTasks[0] || null);
+
+    // Keep selected task valid when tasks change
+    useEffect(() => {
+        if (selectedTask && incompleteTasks.some(t => String(t.id) === String(selectedTask.id))) return;
+        setSelectedTask(incompleteTasks[0] || null);
+    }, [incompleteTasks, selectedTask]);
+
+    const activeTask = selectedTask;
 
     const handleStartFocus = async () => {
         if (!activeWorkspaceId || !activeSpaceId) {
@@ -71,6 +81,8 @@ const Setup = ({ setOpenFocusMode }) => {
             taskTitle: activeTask.title,
             duration: selectedDuration,
             sound: selectedSound.value,
+            breakAfter: activeBtn.break,
+            blockNotifications: activeBtn.blockNotifications,
             startTime: new Date().toISOString()
         }));
 
@@ -89,20 +101,41 @@ const Setup = ({ setOpenFocusMode }) => {
                 </div>
                 <button onClick={()=>{setOpenFocusMode(false)}} style={{border:'none',backgroundColor:'transparent',color:'#475569',cursor:'pointer'}}><XIcon/></button>
                 </div>
-                <div className="active-task">
-                    <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
-                    <div style={{width:'70px',height:'70px',borderRadius:'12px',background:'#ede9fe',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                        <PlayIcon size={32} color="#7c3aed"/>
+                <div className="active-task" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '12px' }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',width:'100%'}}>
+                        <h4 style={{marginBottom:'0',color:'#7c3aed'}}>SELECT TASK</h4>
+                        <div style={{color:'#7c3aed',cursor:'pointer'}} onClick={() => navigate('/spaceoverview')}>
+                            <PenIcon/>
+                        </div>
                     </div>
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start'}}>
-                    <h4 style={{marginBottom:'0',color:'#7c3aed'}}>ACTIVE TASK</h4>
-                    <h3 style={{margin:'0'}}>{activeTask?.title || 'No active task'}</h3>
-                    <p style={{marginTop:'0',color:'#475569'}}>{activeTask?.description || 'Select a task to focus on'}</p>   
+                    <div className="custome-select" onClick={() => setOpenTaskBox(!openTaskBox)} style={{ width: '100%' }}>
+                        <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                            <span style={{color:'#7c3aed',marginTop:'5px'}}><PlayIcon size={18}/></span>
+                            <span style={{color:'#475569',fontWeight:'500'}}>{activeTask?.title || 'No active task'}</span>
+                        </div>
+                        <span>{openTaskBox ? <ChevronUp/> : <ChevronDown/>}</span>
                     </div>
-                    </div>
-                    <div style={{color:'#7c3aed',cursor:'pointer'}} onClick={() => navigate('/spaceoverview')}>
-                        <PenIcon/>
-                    </div>
+                    {openTaskBox && (
+                        <ul className="sound-options" style={{ width: '100%', position: 'relative', top: 0 }}>
+                            {incompleteTasks.length > 0 ? incompleteTasks.map((task) => (
+                                <li
+                                    key={task.id}
+                                    onClick={() => {
+                                        setSelectedTask(task);
+                                        setOpenTaskBox(false);
+                                    }}
+                                    style={{ justifyContent: 'flex-start' }}
+                                >
+                                    <span style={{color:'#475569',fontWeight:'500'}}>{task.title}</span>
+                                </li>
+                            )) : (
+                                <li style={{ justifyContent: 'center' }}>
+                                    <span style={{color:'#94a3b8'}}>No incomplete tasks</span>
+                                </li>
+                            )}
+                        </ul>
+                    )}
+                    <p style={{margin:'0',color:'#475569'}}>{activeTask?.description || 'Select a task to focus on'}</p>
                 </div>
                 <div className="duration">
                     <h4 style={{color:'#334155'}}>Focus Duration(minutes)</h4>

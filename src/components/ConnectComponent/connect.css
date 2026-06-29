@@ -79,3 +79,8 @@
   font-size: 2.25rem;
   font-weight: 700;
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

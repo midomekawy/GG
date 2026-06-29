@@ -781,3 +781,34 @@ export const focusAPI = {
   toggleFocusSubtask: (workspaceId, spaceId, taskId, sessionId, subTaskId, data) =>
     api.put(`/api/WorkSpaces/${workspaceId}/Spaces/${spaceId}/Tasks/${taskId}/FocusSessions/${sessionId}/subtasks/${subTaskId}`, data),
 };
+
+// =========================
+// App Connections API
+// Base path: /api/users/current/app-connections
+// =========================
+
+export const appConnectionsAPI = {
+  // GET all connected apps for the current user
+  getConnections: () =>
+    api.get(`/api/users/current/app-connections`),
+
+  // GET a specific connection
+  getConnection: (connectionId) =>
+    api.get(`/api/users/current/app-connections/${connectionId}`),
+
+  // PUT update a connection (e.g. name/settings)
+  updateConnection: (connectionId, data) =>
+    api.put(`/api/users/current/app-connections/${connectionId}`, data),
+
+  // DELETE disconnect an app
+  disconnectApp: (connectionId) =>
+    api.delete(`/api/users/current/app-connections/${connectionId}`),
+
+  // POST start OAuth authorization for a provider (e.g. slack, github, google-calendar)
+  authorizeProvider: (provider) =>
+    api.post(`/api/users/current/app-connections/authorize/${provider}`),
+
+  // POST sync a connected app
+  syncConnection: (connectionId) =>
+    api.post(`/api/users/current/app-connections/${connectionId}/sync`),
+};

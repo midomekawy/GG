@@ -196,9 +196,11 @@ export function TasksProvider({ children }) {
     setIsLoading(true);
     setError(null);
 
-    try {
-      const previousTasks = [...tasks];
+    let previousTasks = [...tasks];
+    let apiWorkspaceId;
+    let optimisticId;
 
+    try {
       // Map UI strings to API integers
       // Handle both string ('Low', 'Medium', 'Critical') and integer (0, 1, 2) inputs
       let priorityValue;
@@ -211,8 +213,8 @@ export function TasksProvider({ children }) {
       }
 
       // Ensure workspaceId is an integer (spaceId is a GUID string, keep as-is)
-      const apiWorkspaceId = parseInt(workspaceId, 10);
-      const optimisticId = `temp-task-${Date.now()}`;
+      apiWorkspaceId = parseInt(workspaceId, 10);
+      optimisticId = `temp-task-${Date.now()}`;
 
       const optimisticTask = {
         ...taskData,
@@ -440,7 +442,7 @@ export function TasksProvider({ children }) {
 
     try {
       // Find the current task to get full payload
-      const currentTask = tasks.find(t => t.id === taskId);
+      const currentTask = tasks.find(t => String(t.id) === String(taskId));
       if (!currentTask) {
         throw new Error('Task not found');
       }
@@ -463,25 +465,38 @@ export function TasksProvider({ children }) {
         return 1; // Default to Moderate (1)
       };
 
-      // Map UI strings to API integers (Endpoint #6 only accepts: title, description, priority, dueDate)
+      const apiWorkspaceId = parseInt(workspaceId, 10) || workspaceId;
+
+      // Map UI strings to API integers (Endpoint #6 accepts: title, description, priority, dueDate, subtasks)
       const apiPayload = {
-        title: currentTask.title,
-        description: currentTask.description || '',
-        priority: mapPriorityToInt(updatedFields.priority || currentTask.priority),
-        dueDate: currentTask.dueDate || null
+        title: updatedFields.title ?? currentTask.title ?? '',
+        description: updatedFields.description ?? currentTask.description ?? '',
+        priority: mapPriorityToInt(updatedFields.priority ?? currentTask.priority),
+        dueDate: updatedFields.dueDate ?? currentTask.dueDate ?? null,
+        subtasks: Array.isArray(updatedFields.subtasks) ? updatedFields.subtasks : (currentTask.subtasks || [])
       };
+
+      // If status is provided in updatedFields, include it in the payload and update status separately
+      if (updatedFields.status !== undefined) {
+        const statusValue = STATUS_MAP[updatedFields.status];
+        if (statusValue !== undefined) {
+          apiPayload.status = statusValue;
+        }
+      }
 
       console.log('updateTask API Payload:', apiPayload);
 
-      const response = await tasksAPI.updateTask(workspaceId, spaceId, taskId, apiPayload);
+      const response = await tasksAPI.updateTask(apiWorkspaceId, spaceId, taskId, apiPayload);
       const data = response.data;
 
       // Update with server response (mapped back to UI strings)
-      // Note: status is not updated here since updateTask doesn't handle status changes
       setTasks(prev => prev.map(task =>
         task.id === taskId ? {
           ...task,
-          priority: PRIORITY_REVERSE_MAP[data.priority] || task.priority
+          ...updatedFields,
+          ...(data && typeof data === 'object' ? data : {}),
+          priority: PRIORITY_REVERSE_MAP[data.priority] || updatedFields.priority || task.priority,
+          status: STATUS_REVERSE_MAP[data.status] || updatedFields.status || task.status
         } : task
       ));
     } catch (err) {
