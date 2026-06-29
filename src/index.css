@@ -1,0 +1,12 @@
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light;
+  color: black;
+  background-color:#F8F8F8;
+}
+body{
+  background-color: #F8F8F8;
+  color: black;
+}

@@ -1,0 +1,262 @@
+.profile-layout {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 3rem;
+  align-items: start;
+}
+
+.profile-card {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 3rem;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-card-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.profile-avatar-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.profile-avatar-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.profile-avatar-large {
+  width: 10rem;
+  height: 10rem;
+  border-radius: 9999px;
+  box-shadow: var(--shadow-lg);
+  border: 4px solid white;
+  object-fit: cover;
+}
+
+.profile-left-text {
+  width: 100%;
+  text-align: center;
+}
+
+.profile-username {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--primary);
+  margin: 0;
+}
+
+.profile-email {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0.5rem 0 0 0;
+}
+
+.profile-form {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 3rem;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-form-header {
+  margin-bottom: 1.5rem;
+}
+
+.profile-form-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.profile-form-subtitle {
+  margin-top: 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 800;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.profile-form-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.profile-name-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.form-label {
+  font-size: 0.625rem;
+  font-weight: 800;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.form-input {
+  padding: 0.9rem 1.1rem;
+  background: var(--bg-main);
+  border: none;
+  border-radius: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.12);
+}
+
+.form-input:disabled {
+  opacity: 0.9;
+  cursor: not-allowed;
+}
+
+.save-btn {
+  width: 100%;
+  padding: 1.1rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 1.5rem;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow-primary);
+  transition: all 0.2s ease;
+}
+
+.save-btn:hover:not(:disabled) {
+  background: var(--primary-light);
+  transform: translateY(-2px);
+}
+
+.save-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.profile-alert {
+  padding: 0.9rem 1rem;
+  border-radius: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.profile-alert--error {
+  background: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid rgba(185, 28, 28, 0.15);
+}
+
+.profile-alert--success {
+  background: #ECFDF5;
+  color: #047857;
+  border: 1px solid rgba(4, 120, 87, 0.15);
+}
+
+.avatar-input {
+  display: none;
+}
+
+.avatar-change-btn {
+  flex: 1;
+  min-width: 160px;
+  padding: 0.75rem 1rem;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: none;
+  border-radius: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.avatar-change-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.avatar-delete-btn {
+  width: 48px;
+  height: 48px;
+  background: var(--bg-main);
+  color: #EF4444;
+  border: none;
+  border-radius: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.avatar-delete-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #FFE4E6;
+}
+
+.avatar-delete-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.avatar-delete-btn i {
+  width: 22px;
+  height: 22px;
+}
+
+.profile-loading {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 3rem;
+  padding: 2.25rem;
+  box-shadow: var(--shadow-sm);
+}
+
+@keyframes profile-email-modal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.profile-email-modal-spinner {
+  animation: profile-email-modal-spin 0.85s linear infinite;
+}
+
+@media (max-width: 1024px) {
+  .profile-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-name-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
