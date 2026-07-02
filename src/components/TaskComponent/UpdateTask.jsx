@@ -11,6 +11,24 @@ const STATUS_OPTIONS = [
 
 const PRIORITY_OPTIONS = ['Low', 'Med', 'High'];
 
+function getTaskAssigneeValue(task) {
+  if (!task) return '';
+  if (task.assigneeEmail) return task.assigneeEmail;
+  if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
+    const firstAssignee = task.assignedTo[0];
+    return typeof firstAssignee === 'string'
+      ? firstAssignee
+      : firstAssignee?.email || firstAssignee?.name || '';
+  }
+  if (Array.isArray(task.assignees) && task.assignees.length > 0) {
+    const firstAssignee = task.assignees[0];
+    return typeof firstAssignee === 'string'
+      ? firstAssignee
+      : firstAssignee?.email || firstAssignee?.name || '';
+  }
+  return task.assignee?.email || task.assignee?.name || '';
+}
+
 function normalizePriority(priority) {
   if (!priority) return 'Low';
   const p = String(priority).toLowerCase();
@@ -20,7 +38,7 @@ function normalizePriority(priority) {
 }
 
 const UpdateTask = ({ task, setUpdateTask, workspaceId, spaceId }) => {
-  const { updateTask, updateTaskStatus } = useTasks();
+  const { updateTask, updateTaskStatus, assignTask, unassignTask } = useTasks();
 
   const [formData, setFormData] = useState({
     title: '',
@@ -40,6 +58,8 @@ const UpdateTask = ({ task, setUpdateTask, workspaceId, spaceId }) => {
     );
   }, [task]);
 
+  const originalAssignee = useMemo(() => getTaskAssigneeValue(task), [task]);
+
   useEffect(() => {
     if (!task) return;
     setFormData({
@@ -48,7 +68,7 @@ const UpdateTask = ({ task, setUpdateTask, workspaceId, spaceId }) => {
       status: task.status || 'todo',
       dueDate: task.dueDate ? task.dueDate.split('T')[0] : '',
       priority: normalizePriority(task.priority),
-      assignee: task.assigneeEmail || task.assignee?.email || task.assignee?.name || '',
+      assignee: getTaskAssigneeValue(task),
       subtasks: normalizedSubtasks,
     });
   }, [task, normalizedSubtasks]);
@@ -90,6 +110,7 @@ const UpdateTask = ({ task, setUpdateTask, workspaceId, spaceId }) => {
     if (!task || !workspaceId || !spaceId) return;
 
     const priorityPayload = formData.priority === 'Med' ? 'Medium' : formData.priority;
+    const nextAssignee = formData.assignee.trim();
 
     setIsSaving(true);
     try {
@@ -103,6 +124,15 @@ const UpdateTask = ({ task, setUpdateTask, workspaceId, spaceId }) => {
 
       if (task.status !== formData.status) {
         await updateTaskStatus(workspaceId, spaceId, task.id, formData.status);
+      }
+
+      if (nextAssignee !== originalAssignee) {
+        if (originalAssignee) {
+          await unassignTask(workspaceId, spaceId, task.id, originalAssignee);
+        }
+        if (nextAssignee) {
+          await assignTask(workspaceId, spaceId, task.id, nextAssignee);
+        }
       }
 
       setUpdateTask(false);
@@ -191,13 +221,12 @@ const UpdateTask = ({ task, setUpdateTask, workspaceId, spaceId }) => {
               <label className="update-task-label">Assignee</label>
               <div className="update-task-assignee">
                 <span className="update-task-avatar">{assigneeInitial}</span>
-                <select
+                <input
+                  type="email"
+                  placeholder="Enter assignee email"
                   value={formData.assignee}
                   onChange={(e) => handleChange('assignee', e.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  <option value={formData.assignee}>{formData.assignee || 'Current assignee'}</option>
-                </select>
+                />
               </div>
             </div>
           </div>

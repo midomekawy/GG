@@ -101,6 +101,10 @@ const SidebarofWorkspace = () => {
   }
 
   const title = activeWorkspace?.name?.trim() || "Workspace";
+  const visibleSpaces = spaces.filter((space) => {
+    if (!activeWorkspaceId) return true;
+    return String(space.workspaceId) === String(activeWorkspaceId);
+  });
 
   return (
     <div dir="auto">
@@ -245,8 +249,8 @@ const SidebarofWorkspace = () => {
             </span>
           </div>
           <nav className="sidebar-nav">
-            {spaces && spaces.length > 0 ? (
-              spaces.map((space) => (
+            {visibleSpaces && visibleSpaces.length > 0 ? (
+              visibleSpaces.map((space) => (
                 <div key={space.id}>
                   <NavLink
                     to={"/spaceoverview"}

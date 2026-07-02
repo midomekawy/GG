@@ -1,4 +1,4 @@
-import { BellOffIcon, BirdIcon, ChevronDown, ChevronUp, CoffeeIcon, icons, PenIcon, PlayIcon, SquareActivity, Trees, Waves, XIcon } from 'lucide-react';
+import { BellOffIcon, BirdIcon, ChevronDown, ChevronUp, CoffeeIcon, ListChecks, PenIcon, PlayIcon, SquareActivity, Trees, Waves, XIcon } from 'lucide-react';
 import '../WorkspacesComponent/workSpaceStyle.css';
 import './focusstyles.css';
 import { useState, useEffect } from 'react';
@@ -19,6 +19,7 @@ const Setup = ({ setOpenFocusMode }) => {
     const [activeBtn,setActiveBtn] = useState({
         break:false,
         blockNotifications:false,
+        showSubtasks:true,
     });
     const [openSoundbox, setOpenSoundbox] = useState(false);
     const [openTaskBox, setOpenTaskBox] = useState(false);
@@ -33,7 +34,14 @@ const Setup = ({ setOpenFocusMode }) => {
     const [selectedSound, setSelectedSound] = useState({name:'Rainforest',value:'rainforest',icon:<Trees/>});
 
     // Get incomplete tasks for the active space and allow user to select one
-    const incompleteTasks = tasks?.filter(t => t.status !== 'done' && t.status !== 'completed') || [];
+    const incompleteTasks = tasks?.filter((task) => {
+        const taskWorkspaceId = String(task.workspaceId ?? task.WorkspaceId ?? '');
+        const taskSpaceId = String(task.spaceId ?? task.SpaceId ?? task.spaceGUID ?? task.SpaceGuid ?? '');
+        const isCurrentWorkspace = String(taskWorkspaceId) === String(activeWorkspaceId);
+        const isCurrentSpace = String(taskSpaceId) === String(activeSpaceId);
+        const status = typeof task.status === 'string' ? task.status.toLowerCase() : '';
+        return isCurrentWorkspace && isCurrentSpace && status !== 'done' && status !== 'completed';
+    }) || [];
     const [selectedTask, setSelectedTask] = useState(() => incompleteTasks[0] || null);
 
     // Keep selected task valid when tasks change
@@ -62,6 +70,7 @@ const Setup = ({ setOpenFocusMode }) => {
             ambientSound: selectedSound.value,
             breakAfter: activeBtn.break,
             blockNotifications: activeBtn.blockNotifications
+            ,showSubtasks: activeBtn.showSubtasks
         };
 
         let sessionId = 'focus-session-' + Date.now();
@@ -77,12 +86,15 @@ const Setup = ({ setOpenFocusMode }) => {
 
         localStorage.setItem('focusSession', JSON.stringify({
             sessionId: sessionId,
+            workspaceId: activeWorkspaceId,
+            spaceId: activeSpaceId,
             taskId: activeTask.id,
             taskTitle: activeTask.title,
             duration: selectedDuration,
             sound: selectedSound.value,
             breakAfter: activeBtn.break,
             blockNotifications: activeBtn.blockNotifications,
+            showSubtasks: activeBtn.showSubtasks,
             startTime: new Date().toISOString()
         }));
 
@@ -175,7 +187,10 @@ const Setup = ({ setOpenFocusMode }) => {
                     <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
                     <div style={{color:'#64748b'}}><CoffeeIcon/></div>
                     <div style={{display:'flex',alignItems:'flex-start',flexDirection:'column'}}>
-                    <h3 style={{marginBottom:'0'}}>Optional break after session</h3>
+                    <h3 style={{marginBottom:'0', display:'flex', alignItems:'center', gap:'8px'}}>
+                      Optional break after session
+                      <span style={{fontSize:'11px', fontWeight:500, color: activeBtn.break ? '#fff' : '#64748b', backgroundColor: activeBtn.break ? '#7c3aed' : '#f1f5f9', padding:'3px 8px', borderRadius:'12px', cursor:'pointer', transition:'all 0.2s ease'}} onClick={() => setActiveBtn(prev => ({ ...prev, break: !prev.break }))}>Optional</span>
+                    </h3>
                     <p style={{marginTop:'0',color:'#64748b'}}>Automatic 5-minute breather</p>
                     </div>
                     </div>
@@ -185,11 +200,27 @@ const Setup = ({ setOpenFocusMode }) => {
                     <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
                     <div style={{color:'#64748b'}}><BellOffIcon/></div>
                     <div style={{display:'flex',alignItems:'flex-start',flexDirection:'column'}}>
-                    <h3 style={{marginBottom:'0'}}>Block notifications</h3>
+                    <h3 style={{marginBottom:'0', display:'flex', alignItems:'center', gap:'8px'}}>
+                      Block notifications
+                      <span style={{fontSize:'11px', fontWeight:500, color: activeBtn.blockNotifications ? '#fff' : '#64748b', backgroundColor: activeBtn.blockNotifications ? '#7c3aed' : '#f1f5f9', padding:'3px 8px', borderRadius:'12px', cursor:'pointer', transition:'all 0.2s ease'}} onClick={() => setActiveBtn(prev => ({ ...prev, blockNotifications: !prev.blockNotifications }))}>Optional</span>
+                    </h3>
                     <p style={{marginTop:'0',color:'#64748b'}}>Silent mode for all desktop apps</p>
                     </div>
                     </div>
                     <div className={activeBtn.blockNotifications ? "toggle-switch active" : "toggle-switch"} onClick={() => setActiveBtn(prev => ({ ...prev, blockNotifications: !prev.blockNotifications }))}></div>
+                </div>
+                <div className='box'>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'10px'}}>
+                    <div style={{color:'#64748b'}}><ListChecks size={20}/></div>
+                    <div style={{display:'flex',alignItems:'flex-start',flexDirection:'column'}}>
+                    <h3 style={{marginBottom:'0', display:'flex', alignItems:'center', gap:'8px'}}>
+                      Subtasks tool
+                      <span style={{fontSize:'11px', fontWeight:500, color: activeBtn.showSubtasks ? '#fff' : '#64748b', backgroundColor: activeBtn.showSubtasks ? '#7c3aed' : '#f1f5f9', padding:'3px 8px', borderRadius:'12px', cursor:'pointer', transition:'all 0.2s ease'}} onClick={() => setActiveBtn(prev => ({ ...prev, showSubtasks: !prev.showSubtasks }))}>Optional</span>
+                    </h3>
+                    <p style={{marginTop:'0',color:'#64748b'}}>Show subtasks you can tick during focus</p>
+                    </div>
+                    </div>
+                    <div className={activeBtn.showSubtasks ? "toggle-switch active" : "toggle-switch"} onClick={() => setActiveBtn(prev => ({ ...prev, showSubtasks: !prev.showSubtasks }))}></div>
                 </div>
                 </div>
                 <button 

@@ -11,6 +11,20 @@ import { focusAPI } from "../../services/api";
 import toast from "react-hot-toast";
 import useAmbientSound from "./AmbientSound";
 
+const normalizeSubtasks = (subtasks) => {
+    if (!Array.isArray(subtasks)) return [];
+    return subtasks.map((subtask, index) => {
+        if (typeof subtask === 'string') {
+            return { id: index + 1, text: subtask, completed: false };
+        }
+        return {
+            id: subtask.id ?? subtask.Id ?? index + 1,
+            text: subtask.text ?? subtask.title ?? subtask.name ?? '',
+            completed: !!subtask.completed,
+        };
+    });
+};
+
 const InFocusMode = ()=>{
     const navigate = useNavigate();
     const { activeWorkspaceId } = useWorkspace();
@@ -48,20 +62,29 @@ const InFocusMode = ()=>{
     };
 
     // Get task from context
-    const task = tasks?.find(t => t.id === sessionData?.taskId);
+    const sessionWorkspaceId = sessionData?.workspaceId || activeWorkspaceId;
+    const sessionSpaceId = sessionData?.spaceId || activeSpaceId;
+    const showSubtasks = sessionData?.showSubtasks !== false;
+    const task = tasks?.find(t =>
+        String(t.id) === String(sessionData?.taskId) &&
+        String(t.workspaceId ?? t.WorkspaceId ?? sessionWorkspaceId) === String(sessionWorkspaceId) &&
+        String(t.spaceId ?? t.SpaceId ?? t.spaceGUID ?? t.SpaceGuid ?? sessionSpaceId) === String(sessionSpaceId)
+    );
 
-    const [subtasks, setSubtasks] = useState(task?.subtasks || [
-        { id: 1, text: 'Audit current assets', completed: true },
-        { id: 2, text: 'Draft color palette', completed: false },
-        { id: 3, text: 'Review with design lead', completed: false },
-    ]);
+    const [subtasks, setSubtasks] = useState([]);
+
+    useEffect(() => {
+        if (!task) return;
+        const nextSubtasks = normalizeSubtasks(task.subtasks);
+        setSubtasks(nextSubtasks);
+    }, [task?.id]);
 
     const handleEndFocus = useCallback(async () => {
         try {
-            if (sessionData?.sessionId && activeWorkspaceId && activeSpaceId) {
+            if (sessionData?.sessionId && sessionWorkspaceId && sessionSpaceId) {
                 await focusAPI.completeFocusSession(
-                    activeWorkspaceId,
-                    activeSpaceId,
+                    sessionWorkspaceId,
+                    sessionSpaceId,
                     sessionData.taskId,
                     sessionData.sessionId
                 );
@@ -82,7 +105,7 @@ const InFocusMode = ()=>{
         localStorage.removeItem('focusSession');
         toast.success('Focus session completed!');
         navigate('/focuscompletion');
-    }, [sessionData, activeWorkspaceId, activeSpaceId, navigate, subtasks]);
+    }, [sessionData, sessionWorkspaceId, sessionSpaceId, navigate, subtasks]);
 
     // Timer effect
     useEffect(() => {
@@ -116,10 +139,10 @@ const InFocusMode = ()=>{
         setOpenPauseFocus(true);
         
         try {
-            if (sessionData?.sessionId && activeWorkspaceId && activeSpaceId) {
+            if (sessionData?.sessionId && sessionWorkspaceId && sessionSpaceId) {
                 await focusAPI.pauseFocusSession(
-                    activeWorkspaceId,
-                    activeSpaceId,
+                    sessionWorkspaceId,
+                    sessionSpaceId,
                     sessionData.taskId,
                     sessionData.sessionId
                 );
@@ -134,10 +157,10 @@ const InFocusMode = ()=>{
         setOpenPauseFocus(false);
         
         try {
-            if (sessionData?.sessionId && activeWorkspaceId && activeSpaceId) {
+            if (sessionData?.sessionId && sessionWorkspaceId && sessionSpaceId) {
                 await focusAPI.resumeFocusSession(
-                    activeWorkspaceId,
-                    activeSpaceId,
+                    sessionWorkspaceId,
+                    sessionSpaceId,
                     sessionData.taskId,
                     sessionData.sessionId
                 );
@@ -153,9 +176,19 @@ const InFocusMode = ()=>{
         }
     };
 
-    const toggelTask = (taskId) =>{
-        setSubtasks(prevSubTasks =>
-        prevSubTasks.map(task=> task.id === taskId ? {...task, completed: !task.completed} : task))
+    const toggelTask = (subtaskId) =>{
+        setSubtasks(prevSubTasks => {
+            const nextSubtasks = prevSubTasks.map(st =>
+                st.id === subtaskId ? { ...st, completed: !st.completed } : st
+            );
+            // Persist subtask completion back to the task
+            if (task && sessionWorkspaceId && sessionSpaceId) {
+                const payloadSubtasks = nextSubtasks.map(st => ({ title: st.text, completed: st.completed }));
+                updateTask(sessionWorkspaceId, sessionSpaceId, task.id, { subtasks: payloadSubtasks })
+                    .catch(err => console.warn('Failed to persist subtask completion:', err));
+            }
+            return nextSubtasks;
+        });
     };
     return(
         <div className="in-focus-mode-container">
@@ -167,25 +200,37 @@ const InFocusMode = ()=>{
             <div className="content-box">
                 <h2 style={{marginBottom:'0'}}>{task?.title || sessionData?.taskTitle || 'Focus Session'}</h2>
                 <p style={{marginTop:'0',color:'#6b7a91'}}>{task?.description || 'Stay focused and complete your task.'}</p>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',width:'100%',margin:'0'}}>
-                <p style={{color:'#333'}}>Progress</p>
-                <p style={{color:'#5b10bd'}}>{subtasks.filter(s => s.completed).length} of {subtasks.length} subtasks</p>
-                </div>
-                <div className="progress-bar-bg" style={{backgroundColor:'#efe7f9'}}>
-              <div className="progress-bar-fill" style={{ width: `${(subtasks.filter(s => s.completed).length / subtasks.length) * 100}%`,backgroundColor:'#5b10bd' }}></div>
-            </div>
-                <div className="subtasks">
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start',width:'100%'}}>
-                    {subtasks.map(task=>(
-                        <div key={task.id} className={task.completed ? 'subtask-box completed':'subtask-box'} onClick={()=>{toggelTask(task.id)}}>
-                            <div className={`checkbox ${task.completed ? 'checked' : ''}`}>
-                             {task.completed && <span>✓</span>}
-                             </div>
-                            <span className="task-text">{task.text}</span>
-                        </div>
-                    ))}
+                {sessionData?.blockNotifications ? (
+                    <p style={{margin:'8px 0 0',color:'#7c3aed',fontWeight:600}}>Notifications are blocked for this session.</p>
+                ) : null}
+                {!showSubtasks ? (
+                    <p style={{margin:'12px 0 0',color:'#6b7a91'}}>Subtasks tool is off for this session.</p>
+                ) : subtasks.length === 0 ? (
+                    <p style={{margin:'12px 0 0',color:'#6b7a91'}}>No subtasks were added for this task.</p>
+                ) : null}
+                {showSubtasks ? (
+                  <>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',width:'100%',margin:'0'}}>
+                    <p style={{color:'#333'}}>Progress</p>
+                    <p style={{color:'#5b10bd'}}>{subtasks.filter(s => s.completed).length} of {subtasks.length} subtasks</p>
                     </div>
+                    <div className="progress-bar-bg" style={{backgroundColor:'#efe7f9'}}>
+                  <div className="progress-bar-fill" style={{ width: `${subtasks.length > 0 ? (subtasks.filter(s => s.completed).length / subtasks.length) * 100 : 0}%`,backgroundColor:'#5b10bd' }}></div>
                 </div>
+                    <div className="subtasks">
+                        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start',width:'100%'}}>
+                        {subtasks.map(task=>(
+                            <div key={task.id} className={task.completed ? 'subtask-box completed':'subtask-box'} onClick={()=>{toggelTask(task.id)}}>
+                                <div className={`checkbox ${task.completed ? 'checked' : ''}`}>
+                                 {task.completed && <span>✓</span>}
+                                 </div>
+                                <span className="task-text">{task.text}</span>
+                            </div>
+                        ))}
+                        </div>
+                    </div>
+                  </>
+                ) : null}
             </div>
             <div className="buttons">
                 <button onClick={handlePauseFocus} style={{backgroundColor:'#5b10bd',color:'white'}}><span><Pause size={18}/></span>Pause Focus</button>

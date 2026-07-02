@@ -23,6 +23,11 @@ const SpacesSidebar = ({ workspaceId }) => {
   const [expandedSpaceId, setExpandedSpaceId] = useState(activeSpaceId);
   const [menuOpenId, setMenuOpenId] = useState(null);
 
+  const visibleSpaces = spaces.filter((space) => {
+    if (!workspaceId) return true;
+    return String(space.workspaceId) === String(workspaceId);
+  });
+
   console.log("🔥 [SpacesSidebar] Rendering with spaces from context:", spaces);
 
   const handleSpaceClick = (spaceId) => {
@@ -82,8 +87,8 @@ const SpacesSidebar = ({ workspaceId }) => {
       </div>
 
       <div className="spaces-list">
-        {spaces && spaces.length > 0 ? (
-          spaces.map((space) => (
+        {visibleSpaces && visibleSpaces.length > 0 ? (
+          visibleSpaces.map((space) => (
             <div key={space.id} className="space-item">
               <div
                 className={`space-header ${activeSpaceId === space.id ? "active" : ""}`}

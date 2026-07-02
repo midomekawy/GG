@@ -630,6 +630,22 @@ export const tasksAPI = {
   createTask: (workspaceId, spaceId, taskData) =>
     api.post(`/api/WorkSpaces/${workspaceId}/Spaces/${spaceId}/Tasks`, taskData),
 
+  // 1b. Create a subtask under a task
+  createSubTask: (workspaceId, spaceId, taskId, subTaskData) =>
+    api.post(`/api/WorkSpaces/${workspaceId}/Spaces/${spaceId}/Tasks/${taskId}/SubTasks`, subTaskData),
+
+  // 1c. Update a subtask title
+  updateSubTask: (workspaceId, spaceId, taskId, subTaskId, subTaskData) =>
+    api.put(`/api/WorkSpaces/${workspaceId}/Spaces/${spaceId}/Tasks/${taskId}/SubTasks/${subTaskId}`, subTaskData),
+
+  // 1d. Update a subtask completion state
+  updateSubTaskStatus: (workspaceId, spaceId, taskId, subTaskId, statusData) =>
+    api.put(`/api/WorkSpaces/${workspaceId}/Spaces/${spaceId}/Tasks/${taskId}/SubTasks/${subTaskId}/status`, statusData),
+
+  // 1e. Delete a subtask
+  deleteSubTask: (workspaceId, spaceId, taskId, subTaskId) =>
+    api.delete(`/api/WorkSpaces/${workspaceId}/Spaces/${spaceId}/Tasks/${taskId}/SubTasks/${subTaskId}`),
+
   // 2. Get all tasks (with optional query parameters for sorting/pagination)
   getTasks: (workspaceId, spaceId, params = {}) =>
     api.get(`/api/WorkSpaces/${workspaceId}/Spaces/${spaceId}/Tasks`, { params }),

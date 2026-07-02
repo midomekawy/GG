@@ -14,21 +14,23 @@ const STATUS_MAP = {
 const STATUS_REVERSE_MAP = {
   0: 'todo',
   1: 'on-progress',
-  2: 'done'
+  2: 'done',
+  3: 'done' // extra backend state mapped to closest UI value
 };
 
 const PRIORITY_MAP = {
   'Low': 0,
   'Moderate': 1,
   'Medium': 1, // alias
-  'High': 2, // alias
-  'Critical': 2
+  'High': 2,
+  'Critical': 3
 };
 
 const PRIORITY_REVERSE_MAP = {
   0: 'Low',
   1: 'Moderate',
-  2: 'Critical'
+  2: 'High',
+  3: 'Critical'
 };
 
 const TASKS_STORAGE_KEY = "aigendaTasksBySpace";
@@ -70,6 +72,126 @@ function writeTasksCache(cache) {
   } catch {
     // Ignore storage write failures.
   }
+}
+
+function normalizeSubtasks(subtasks) {
+  if (!Array.isArray(subtasks)) return [];
+  return subtasks.map((subtask) => {
+    if (typeof subtask === 'string') {
+      return { title: subtask, completed: false };
+    }
+    return {
+      title: subtask?.title ?? subtask?.text ?? subtask?.name ?? '',
+      completed: !!subtask?.completed,
+    };
+  });
+}
+
+function subtasksToApiPayload(subtasks) {
+  return normalizeSubtasks(subtasks)
+    .map((subtask) => subtask.title)
+    .filter((title) => String(title).trim() !== "");
+}
+
+function normalizeTaskSubtasks(subtasks) {
+  if (!Array.isArray(subtasks)) return [];
+  return subtasks.map((subtask) => {
+    if (typeof subtask === 'string') {
+      return { id: null, title: subtask, completed: false };
+    }
+
+    return {
+      id: subtask?.id ?? subtask?.Id ?? subtask?._id ?? null,
+      title: subtask?.title ?? subtask?.text ?? subtask?.name ?? '',
+      completed: !!subtask?.completed,
+    };
+  });
+}
+
+function toDateTimeString(dateValue) {
+  if (!dateValue) return null;
+  if (typeof dateValue !== 'string') return null;
+  const trimmed = dateValue.trim();
+  if (!trimmed) return null;
+
+  // If it's already a valid ISO date-time, keep it (normalizing to midnight if it's just a date)
+  const direct = new Date(trimmed);
+  if (!Number.isNaN(direct.getTime())) {
+    // If the string looks like a date-only value (YYYY-MM-DD), convert to midnight ISO
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return direct.toISOString();
+    }
+    return trimmed;
+  }
+
+  // Try appending midnight time to a date-only candidate
+  const isoCandidate = `${trimmed}T00:00:00`;
+  const parsed = new Date(isoCandidate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function isTempTaskId(taskId) {
+  if (!taskId) return true;
+  const normalized = String(taskId);
+  return normalized.startsWith('temp-task-') || normalized.startsWith('temp-');
+}
+
+function extractValidationMessage(payload) {
+  const errors = payload?.errors;
+  if (!errors || typeof errors !== 'object') return '';
+
+  const parts = [];
+  const walk = (node, prefix = '') => {
+    for (const [field, value] of Object.entries(node)) {
+      const key = prefix ? `${prefix}.${field}` : field;
+      if (Array.isArray(value)) {
+        const messages = value.filter(Boolean).map((entry) => String(entry));
+        if (messages.length > 0) {
+          parts.push(`${key}: ${messages.join(' | ')}`);
+        }
+      } else if (value && typeof value === 'object') {
+        walk(value, key);
+      } else if (value) {
+        parts.push(`${key}: ${String(value)}`);
+      }
+    }
+  }
+
+  walk(errors);
+
+  return parts.join(' ; ');
+}
+
+function mapStatusToUi(statusValue, fallback = 'todo') {
+  if (typeof statusValue === 'number' && STATUS_REVERSE_MAP[statusValue] !== undefined) {
+    return STATUS_REVERSE_MAP[statusValue];
+  }
+  if (typeof statusValue === 'string') {
+    if (STATUS_MAP[statusValue] !== undefined) {
+      return statusValue;
+    }
+    const parsed = Number.parseInt(statusValue, 10);
+    if (!Number.isNaN(parsed) && STATUS_REVERSE_MAP[parsed] !== undefined) {
+      return STATUS_REVERSE_MAP[parsed];
+    }
+  }
+  return fallback;
+}
+
+function mapPriorityToUi(priorityValue, fallback = 'Low') {
+  if (typeof priorityValue === 'number' && PRIORITY_REVERSE_MAP[priorityValue] !== undefined) {
+    return PRIORITY_REVERSE_MAP[priorityValue];
+  }
+  if (typeof priorityValue === 'string') {
+    const normalized = PRIORITY_REVERSE_MAP[PRIORITY_MAP[priorityValue]] || priorityValue;
+    if (normalized) return normalized;
+    const parsed = Number.parseInt(priorityValue, 10);
+    if (!Number.isNaN(parsed) && PRIORITY_REVERSE_MAP[parsed] !== undefined) {
+      return PRIORITY_REVERSE_MAP[parsed];
+    }
+  }
+  return fallback;
 }
 
 // ============================================================================
@@ -241,14 +363,20 @@ export function TasksProvider({ children }) {
         writeTasksCache(taskCache);
       }
 
+      const normalizedSubtasks = subtasksToApiPayload(taskData.subtasks);
+
       const apiPayload = {
         title: taskData.title,
         description: taskData.description || '',
-        status: STATUS_MAP[taskData.status] !== undefined ? STATUS_MAP[taskData.status] : 0,
         priority: priorityValue,
-        dueDate: taskData.dueDate || null,
-        subtasks: Array.isArray(taskData.subtasks) ? taskData.subtasks : []
       };
+
+      if (taskData.dueDate) {
+        const normalizedDueDate = toDateTimeString(taskData.dueDate);
+        if (normalizedDueDate) {
+          apiPayload.dueDate = normalizedDueDate;
+        }
+      }
 
       console.log("API Payload:", apiPayload);
       console.log("Request URL: WorkSpaces/${apiWorkspaceId}/Spaces/${spaceId}/Tasks");
@@ -264,18 +392,33 @@ export function TasksProvider({ children }) {
       const finalStatus = STATUS_REVERSE_MAP[responseData?.status] ?? responseData?.status ?? taskData.status ?? 'todo';
       const finalPriority = PRIORITY_REVERSE_MAP[responseData?.priority] ?? responseData?.priority ?? taskData.priority ?? 'Low';
 
+      const serverTaskId = responseData?.id || responseData?.Id || responseData?._id || responseData?.taskId || responseData?.taskID;
+
       const mappedTask = {
         ...optimisticTask,
         ...responseData,
-        id: responseData?.id || responseData?._id || optimisticId,
+        id: serverTaskId || optimisticId,
         spaceId,
         workspaceId: apiWorkspaceId,
         status: finalStatus.toString(),
         priority: finalPriority.toString(),
         user: responseData?.user || null,
         assignee: responseData?.assignee || null,
-        __optimistic: false,
+        __optimistic: !serverTaskId,
       };
+
+      if (normalizedSubtasks.length > 0 && mappedTask.id && mappedTask.id !== optimisticId) {
+        try {
+          await Promise.all(
+            normalizedSubtasks.map((title) => tasksAPI.createSubTask(apiWorkspaceId, spaceId, mappedTask.id, { title }))
+          );
+          mappedTask.subtasks = normalizedSubtasks;
+        } catch (subtaskErr) {
+          console.warn('Task created but one or more subtasks failed to save:', subtaskErr);
+        }
+      } else if (normalizedSubtasks.length > 0) {
+        mappedTask.subtasks = normalizedSubtasks;
+      }
 
       // Reconcile the optimistic entry with the confirmed server record.
       setTasks(prevTasks =>
@@ -307,10 +450,15 @@ export function TasksProvider({ children }) {
         writeTasksCache(taskCache);
       }
 
-      setError(err?.response?.data?.message || err.message || "An error occurred");
+      const validationMessage = extractValidationMessage(err?.response?.data);
+      const serverMessage = validationMessage || err?.response?.data?.message || err?.response?.data?.title || err.message || "An error occurred";
+      setError(serverMessage);
       console.error("Error creating task:", err);
       console.error("Error details:", err.response?.data || err.message);
-      throw err;
+      const wrappedError = new Error(serverMessage);
+      wrappedError.response = err?.response;
+      wrappedError.originalError = err;
+      throw wrappedError;
     } finally {
       setIsLoading(false);
     }
@@ -325,8 +473,8 @@ export function TasksProvider({ children }) {
 
     // Helper function to safely map status to integer
     const mapStatusToInt = (statusValue) => {
-      // If already a valid integer (0, 1, 2), return it
-      if (typeof statusValue === 'number' && [0, 1, 2].includes(statusValue)) {
+      // If already a valid integer (0-3), return it
+      if (typeof statusValue === 'number' && [0, 1, 2, 3].includes(statusValue)) {
         return statusValue;
       }
       // If it's a string, try to map it
@@ -335,7 +483,7 @@ export function TasksProvider({ children }) {
         if (mapped !== undefined) return mapped;
         // Try parsing as integer
         const parsed = parseInt(statusValue, 10);
-        if (!isNaN(parsed) && [0, 1, 2].includes(parsed)) return parsed;
+        if (!isNaN(parsed) && [0, 1, 2, 3].includes(parsed)) return parsed;
       }
       // Default fallback
       return 0; // Default to todo (0)
@@ -347,10 +495,26 @@ export function TasksProvider({ children }) {
     const uiStringStatus = STATUS_REVERSE_MAP[apiStatus] || 'todo';
 
     // Optimistic UI update
-    const previousTasks = [...tasks];
     setTasks(prev => prev.map(task =>
       task.id === taskId ? { ...task, status: uiStringStatus } : task
     ));
+
+    // Persist optimistic change locally so the UI stays consistent even when offline
+    {
+      const cacheKey = getTaskCacheKey(parseInt(workspaceId, 10) || workspaceId, spaceId);
+      const taskCache = readTasksCache();
+      const list = Array.isArray(taskCache[cacheKey]) ? taskCache[cacheKey] : [];
+      taskCache[cacheKey] = list.map(t =>
+        String(t.id) === String(taskId) ? { ...t, status: uiStringStatus } : t
+      );
+      writeTasksCache(taskCache);
+    }
+
+    // If this is a not-yet-confirmed task, skip the server call and keep the local change
+    if (isTempTaskId(taskId)) {
+      console.warn('updateTaskStatus skipped for temporary task:', taskId);
+      return;
+    }
 
     try {
       // Pass the payload as per API documentation: { status: <integer> }
@@ -368,8 +532,7 @@ export function TasksProvider({ children }) {
         ));
       }
     } catch (err) {
-      // Rollback on error
-      setTasks(previousTasks);
+      // Keep the local optimistic change but surface the error
       setError(err?.response?.data?.message || err.message || "An error occurred");
       console.error("Error updating task status:", err);
       throw err;
@@ -383,18 +546,39 @@ export function TasksProvider({ children }) {
   const assignTask = useCallback(async (workspaceId, spaceId, taskId, email) => {
     setError(null);
 
-    // Optimistic UI update
-    const previousTasks = [...tasks];
+    const apiWorkspaceId = parseInt(workspaceId, 10) || workspaceId;
+    const currentTask = tasks.find(t => String(t.id) === String(taskId));
+    const previousAssignees = currentTask?.assignedTo || [];
+
+    // Optimistic UI update: add the email to the assignedTo array
+    const nextAssignees = Array.isArray(previousAssignees)
+      ? [...previousAssignees, email]
+      : [email];
     setTasks(prev => prev.map(task =>
-      task.id === taskId ? { ...task, assigneeEmail: email } : task
+      task.id === taskId ? { ...task, assignedTo: nextAssignees, assigneeEmail: email } : task
     ));
+
+    // Persist locally
+    {
+      const cacheKey = getTaskCacheKey(apiWorkspaceId, spaceId);
+      const taskCache = readTasksCache();
+      const list = Array.isArray(taskCache[cacheKey]) ? taskCache[cacheKey] : [];
+      taskCache[cacheKey] = list.map(t =>
+        String(t.id) === String(taskId) ? { ...t, assignedTo: nextAssignees, assigneeEmail: email } : t
+      );
+      writeTasksCache(taskCache);
+    }
+
+    // Skip server call for not-yet-confirmed tasks
+    if (isTempTaskId(taskId)) {
+      console.warn('assignTask skipped for temporary task:', taskId);
+      return { assignedTo: nextAssignees };
+    }
 
     try {
       const response = await tasksAPI.assignMember(workspaceId, spaceId, taskId, { email });
       return response.data;
     } catch (err) {
-      // Rollback on error
-      setTasks(previousTasks);
       setError(err?.response?.data?.message || err.message || "An error occurred");
       console.error("Error assigning task:", err);
       throw err;
@@ -408,18 +592,39 @@ export function TasksProvider({ children }) {
   const unassignTask = useCallback(async (workspaceId, spaceId, taskId, email) => {
     setError(null);
 
-    // Optimistic UI update
-    const previousTasks = [...tasks];
+    const apiWorkspaceId = parseInt(workspaceId, 10) || workspaceId;
+    const currentTask = tasks.find(t => String(t.id) === String(taskId));
+    const previousAssignees = currentTask?.assignedTo || [];
+
+    // Optimistic UI update: remove the email from the assignedTo array
+    const nextAssignees = Array.isArray(previousAssignees)
+      ? previousAssignees.filter(a => (typeof a === 'string' ? a : a?.email) !== email)
+      : [];
     setTasks(prev => prev.map(task =>
-      task.id === taskId ? { ...task, assigneeEmail: null } : task
+      task.id === taskId ? { ...task, assignedTo: nextAssignees, assigneeEmail: nextAssignees[0] || null } : task
     ));
+
+    // Persist locally
+    {
+      const cacheKey = getTaskCacheKey(apiWorkspaceId, spaceId);
+      const taskCache = readTasksCache();
+      const list = Array.isArray(taskCache[cacheKey]) ? taskCache[cacheKey] : [];
+      taskCache[cacheKey] = list.map(t =>
+        String(t.id) === String(taskId) ? { ...t, assignedTo: nextAssignees, assigneeEmail: nextAssignees[0] || null } : t
+      );
+      writeTasksCache(taskCache);
+    }
+
+    // Skip server call for not-yet-confirmed tasks
+    if (isTempTaskId(taskId)) {
+      console.warn('unassignTask skipped for temporary task:', taskId);
+      return { assignedTo: nextAssignees };
+    }
 
     try {
       const response = await tasksAPI.unassignMember(workspaceId, spaceId, taskId, { email });
       return response.data;
     } catch (err) {
-      // Rollback on error
-      setTasks(previousTasks);
       setError(err?.response?.data?.message || err.message || "An error occurred");
       console.error("Error unassigning task:", err);
       throw err;
@@ -434,77 +639,177 @@ export function TasksProvider({ children }) {
   const updateTask = useCallback(async (workspaceId, spaceId, taskId, updatedFields) => {
     setError(null);
 
+    const currentTask = tasks.find(t => String(t.id) === String(taskId));
+    if (!currentTask) {
+      console.warn('updateTask: task not found', taskId);
+      throw new Error('Task not found');
+    }
+
+    const apiWorkspaceId = parseInt(workspaceId, 10) || workspaceId;
+
+    // Build the merged task as the user expects it to look after the edit
+    const currentSubtasks = normalizeTaskSubtasks(currentTask.subtasks);
+    const requestedSubtasks = Array.isArray(updatedFields.subtasks)
+      ? normalizeTaskSubtasks(updatedFields.subtasks)
+      : currentSubtasks;
+    const mergedSubtasks = requestedSubtasks.map((subtask, index) => ({
+      ...subtask,
+      id: subtask.id ?? currentSubtasks[index]?.id ?? null,
+    }));
+
+    const optimisticMergedTask = {
+      ...currentTask,
+      ...updatedFields,
+      id: taskId,
+      spaceId: currentTask.spaceId ?? spaceId,
+      workspaceId: apiWorkspaceId,
+      subtasks: mergedSubtasks,
+    };
+
     // Optimistic UI update
-    const previousTasks = [...tasks];
     setTasks(prev => prev.map(task =>
-      task.id === taskId ? { ...task, ...updatedFields } : task
+      task.id === taskId ? { ...task, ...optimisticMergedTask } : task
     ));
 
+    // Persist the optimistic change locally so the user always sees the edit
+    const persistToCache = (taskToPersist) => {
+      const cacheKey = getTaskCacheKey(apiWorkspaceId, spaceId);
+      const taskCache = readTasksCache();
+      const list = Array.isArray(taskCache[cacheKey]) ? taskCache[cacheKey] : [];
+      const exists = list.some(t => String(t.id) === String(taskId));
+      taskCache[cacheKey] = exists
+        ? list.map(t => (String(t.id) === String(taskId) ? { ...t, ...taskToPersist } : t))
+        : [taskToPersist, ...list];
+      writeTasksCache(taskCache);
+    };
+    persistToCache(optimisticMergedTask);
+
+    // If this task hasn't been confirmed by the server yet, keep the local change and skip the API
+    if (isTempTaskId(taskId)) {
+      console.warn('updateTask skipped for temporary task:', taskId);
+      return optimisticMergedTask;
+    }
+
+    // Helper function to safely map priority to integer
+    const mapPriorityToInt = (priorityValue) => {
+      // If already a valid integer (0-3), return it
+      if (typeof priorityValue === 'number' && [0, 1, 2, 3].includes(priorityValue)) {
+        return priorityValue;
+      }
+      // If it's a string, try to map it
+      if (typeof priorityValue === 'string') {
+        const mapped = PRIORITY_MAP[priorityValue];
+        if (mapped !== undefined) return mapped;
+        // Try parsing as integer
+        const parsed = parseInt(priorityValue, 10);
+        if (!isNaN(parsed) && [0, 1, 2, 3].includes(parsed)) return parsed;
+      }
+      // Default fallback
+      return 1; // Default to Moderate (1)
+    };
+
+    // Map UI strings to API integers (TaskRequest only accepts title, description, priority, dueDate)
+    const apiPayload = {
+      title: updatedFields.title ?? currentTask.title ?? '',
+      description: updatedFields.description ?? currentTask.description ?? '',
+      priority: mapPriorityToInt(updatedFields.priority ?? currentTask.priority),
+    };
+
+    const normalizedDueDate = toDateTimeString(updatedFields.dueDate ?? currentTask.dueDate ?? null);
+    if (normalizedDueDate) {
+      apiPayload.dueDate = normalizedDueDate;
+    }
+
+    console.log('updateTask API Payload:', apiPayload);
+
     try {
-      // Find the current task to get full payload
-      const currentTask = tasks.find(t => String(t.id) === String(taskId));
-      if (!currentTask) {
-        throw new Error('Task not found');
-      }
-
-      // Helper function to safely map priority to integer
-      const mapPriorityToInt = (priorityValue) => {
-        // If already a valid integer (0, 1, 2), return it
-        if (typeof priorityValue === 'number' && [0, 1, 2].includes(priorityValue)) {
-          return priorityValue;
-        }
-        // If it's a string, try to map it
-        if (typeof priorityValue === 'string') {
-          const mapped = PRIORITY_MAP[priorityValue];
-          if (mapped !== undefined) return mapped;
-          // Try parsing as integer
-          const parsed = parseInt(priorityValue, 10);
-          if (!isNaN(parsed) && [0, 1, 2].includes(parsed)) return parsed;
-        }
-        // Default fallback
-        return 1; // Default to Moderate (1)
-      };
-
-      const apiWorkspaceId = parseInt(workspaceId, 10) || workspaceId;
-
-      // Map UI strings to API integers (Endpoint #6 accepts: title, description, priority, dueDate, subtasks)
-      const apiPayload = {
-        title: updatedFields.title ?? currentTask.title ?? '',
-        description: updatedFields.description ?? currentTask.description ?? '',
-        priority: mapPriorityToInt(updatedFields.priority ?? currentTask.priority),
-        dueDate: updatedFields.dueDate ?? currentTask.dueDate ?? null,
-        subtasks: Array.isArray(updatedFields.subtasks) ? updatedFields.subtasks : (currentTask.subtasks || [])
-      };
-
-      // If status is provided in updatedFields, include it in the payload and update status separately
-      if (updatedFields.status !== undefined) {
-        const statusValue = STATUS_MAP[updatedFields.status];
-        if (statusValue !== undefined) {
-          apiPayload.status = statusValue;
-        }
-      }
-
-      console.log('updateTask API Payload:', apiPayload);
-
       const response = await tasksAPI.updateTask(apiWorkspaceId, spaceId, taskId, apiPayload);
-      const data = response.data;
+      const data = response?.data?.data || response?.data || {};
+      const nextStatus = mapStatusToUi(data.status ?? updatedFields.status ?? currentTask.status, updatedFields.status ?? currentTask.status);
+      const nextPriority = mapPriorityToUi(data.priority ?? updatedFields.priority ?? currentTask.priority, updatedFields.priority ?? currentTask.priority);
 
-      // Update with server response (mapped back to UI strings)
+      // Sync subtasks best-effort: never let subtask API errors break the main task update
+      if (Array.isArray(updatedFields.subtasks)) {
+        const maxLength = Math.max(currentSubtasks.length, requestedSubtasks.length);
+        const syncOperations = [];
+
+        for (let index = 0; index < maxLength; index += 1) {
+          const previousSubtask = currentSubtasks[index];
+          const nextSubtask = requestedSubtasks[index];
+
+          if (!previousSubtask && nextSubtask && nextSubtask.title.trim()) {
+            syncOperations.push(
+              tasksAPI.createSubTask(apiWorkspaceId, spaceId, taskId, { title: nextSubtask.title.trim() })
+            );
+            continue;
+          }
+
+          if (previousSubtask && !nextSubtask && previousSubtask.id) {
+            syncOperations.push(
+              tasksAPI.deleteSubTask(apiWorkspaceId, spaceId, taskId, previousSubtask.id)
+            );
+            continue;
+          }
+
+          if (!previousSubtask || !nextSubtask || !previousSubtask.id) {
+            continue;
+          }
+
+          if (previousSubtask.title !== nextSubtask.title) {
+            syncOperations.push(
+              tasksAPI.updateSubTask(apiWorkspaceId, spaceId, taskId, previousSubtask.id, {
+                title: nextSubtask.title,
+              })
+            );
+          }
+
+          if (previousSubtask.completed !== nextSubtask.completed) {
+            syncOperations.push(
+              tasksAPI.updateSubTaskStatus(apiWorkspaceId, spaceId, taskId, previousSubtask.id, {
+                isCompleted: nextSubtask.completed,
+              })
+            );
+          }
+        }
+
+        if (syncOperations.length > 0) {
+          try {
+            await Promise.all(syncOperations);
+          } catch (subtaskErr) {
+            console.warn('Task updated but subtask sync failed:', subtaskErr);
+          }
+        }
+      }
+
+      // Build the merged task and update state (mapped back to UI strings)
+      const mergedTask = {
+        ...optimisticMergedTask,
+        ...(data && typeof data === 'object' ? data : {}),
+        id: taskId,
+        spaceId: currentTask.spaceId ?? spaceId,
+        workspaceId: apiWorkspaceId,
+        subtasks: mergedSubtasks,
+        priority: nextPriority,
+        status: nextStatus,
+      };
+
       setTasks(prev => prev.map(task =>
-        task.id === taskId ? {
-          ...task,
-          ...updatedFields,
-          ...(data && typeof data === 'object' ? data : {}),
-          priority: PRIORITY_REVERSE_MAP[data.priority] || updatedFields.priority || task.priority,
-          status: STATUS_REVERSE_MAP[data.status] || updatedFields.status || task.status
-        } : task
+        task.id === taskId ? { ...task, ...mergedTask } : task
       ));
+      persistToCache(mergedTask);
+
+      return mergedTask;
     } catch (err) {
-      // Rollback on error
-      setTasks(previousTasks);
-      setError(err?.response?.data?.message || err.message || "An error occurred");
+      // Keep the optimistic change so the user still sees the edit, but surface the error
+      const validationMessage = extractValidationMessage(err?.response?.data);
+      const serverMessage = validationMessage || err?.response?.data?.message || err?.response?.data?.title || err.message || "An error occurred";
+      setError(serverMessage);
       console.error("Error updating task:", err);
-      throw err;
+      console.error("Error details:", err?.response?.data || err.message);
+      const wrappedError = new Error(serverMessage);
+      wrappedError.response = err?.response;
+      wrappedError.originalError = err;
+      throw wrappedError;
     }
   }, [tasks]);
 

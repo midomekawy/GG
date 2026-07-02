@@ -126,15 +126,57 @@ const MOCK_TASKS_BY_SPACE = {
 const SPACES_STORAGE_KEY = "aigendaSpaces";
 const DELETED_SPACES_STORAGE_KEY = "aigendaDeletedSpaces";
 const NOTES_STORAGE_KEY = "aigendaNotes";
+const ACTIVE_SPACE_STORAGE_KEY = "aigendaActiveSpaceId";
+const HIDDEN_SPACE_NAMES = new Set(["Product Design"]);
+
+const isHiddenSpace = (space) => {
+  const name = String(space?.name || space?.Name || "").trim();
+  return HIDDEN_SPACE_NAMES.has(name);
+};
+
+const filterVisibleSpaces = (spaces) => {
+  if (!Array.isArray(spaces)) return [];
+  return spaces.filter((space) => !isHiddenSpace(space));
+};
+
+const getWorkspaceActiveSpaceKey = (workspaceId) =>
+  workspaceId ? `${ACTIVE_SPACE_STORAGE_KEY}:${workspaceId}` : ACTIVE_SPACE_STORAGE_KEY;
 
 const loadSpacesFromStorage = (workspaceId) => {
   try {
     const raw = localStorage.getItem(SPACES_STORAGE_KEY);
     const all = raw ? JSON.parse(raw) : {};
-    return Array.isArray(all[workspaceId]) ? all[workspaceId] : null;
+    return filterVisibleSpaces(Array.isArray(all[workspaceId]) ? all[workspaceId] : null);
   } catch (e) {
     console.error("Failed to load spaces from localStorage:", e);
     return null;
+  }
+};
+
+const loadActiveSpaceFromStorage = (workspaceId) => {
+  try {
+    const scopedKey = getWorkspaceActiveSpaceKey(workspaceId);
+    const scopedValue = localStorage.getItem(scopedKey);
+    if (scopedValue) return scopedValue;
+    return localStorage.getItem(ACTIVE_SPACE_STORAGE_KEY) || null;
+  } catch (e) {
+    console.error("Failed to load active space from localStorage:", e);
+    return null;
+  }
+};
+
+const saveActiveSpaceToStorage = (workspaceId, spaceId) => {
+  try {
+    const scopedKey = getWorkspaceActiveSpaceKey(workspaceId);
+    if (spaceId) {
+      localStorage.setItem(scopedKey, String(spaceId));
+      localStorage.setItem(ACTIVE_SPACE_STORAGE_KEY, String(spaceId));
+    } else {
+      localStorage.removeItem(scopedKey);
+      localStorage.removeItem(ACTIVE_SPACE_STORAGE_KEY);
+    }
+  } catch (e) {
+    console.error("Failed to save active space to localStorage:", e);
   }
 };
 
@@ -142,7 +184,7 @@ const saveSpacesToStorage = (workspaceId, spaces) => {
   try {
     const raw = localStorage.getItem(SPACES_STORAGE_KEY);
     const all = raw ? JSON.parse(raw) : {};
-    all[workspaceId] = spaces;
+    all[workspaceId] = filterVisibleSpaces(spaces);
     localStorage.setItem(SPACES_STORAGE_KEY, JSON.stringify(all));
   } catch (e) {
     console.error("Failed to save spaces to localStorage:", e);
@@ -247,12 +289,30 @@ export const SpacesProvider = ({ children, workspaceId }) => {
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesError, setNotesError] = useState(null);
   const [activeSpaceId, setActiveSpaceId] = useState(() => {
-    return localStorage.getItem("aigendaActiveSpaceId") || null;
+    return loadActiveSpaceFromStorage(workspaceId);
   });
 
   useEffect(() => {
     notesRef.current = notes;
   }, [notes]);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setSpaces([]);
+      setActiveSpaceId(null);
+      return;
+    }
+
+    const storedSpaces = loadSpacesFromStorage(workspaceId) || [];
+    setSpaces(storedSpaces);
+
+    const storedActiveSpaceId = loadActiveSpaceFromStorage(workspaceId);
+    if (storedActiveSpaceId && storedSpaces.some((space) => String(space.id) === String(storedActiveSpaceId))) {
+      setActiveSpaceId(storedActiveSpaceId);
+    } else {
+      setActiveSpaceId(storedSpaces[0]?.id || null);
+    }
+  }, [workspaceId]);
   const [activeTab, setActiveTab] = useState("Tasks"); // Possible values: "Tasks", "Notes", "Analytics"
   const [loading, setLoading] = useState(false);
   const [token, setToken] = useState(null);
@@ -264,7 +324,11 @@ export const SpacesProvider = ({ children, workspaceId }) => {
   // Persist spaces to localStorage whenever they change
   useEffect(() => {
     if (workspaceId) {
-      saveSpacesToStorage(workspaceId, spaces);
+      // Only save spaces that belong to the current workspace
+      const scopedSpaces = spaces.filter(
+        (space) => String(space.workspaceId) === String(workspaceId)
+      );
+      saveSpacesToStorage(workspaceId, scopedSpaces);
     }
   }, [spaces, workspaceId]);
 
@@ -350,27 +414,30 @@ export const SpacesProvider = ({ children, workspaceId }) => {
       // Load persisted spaces first; if none, seed with mock data
       let loadedSpaces = loadSpacesFromStorage(wsId);
       if (!loadedSpaces || loadedSpaces.length === 0) {
-        loadedSpaces = MOCK_SPACES.filter(s => s.workspaceId === wsId);
+        loadedSpaces = filterVisibleSpaces(MOCK_SPACES.filter(s => s.workspaceId === wsId));
         saveSpacesToStorage(wsId, loadedSpaces);
       }
+
+      loadedSpaces = filterVisibleSpaces(loadedSpaces);
 
       setSpaces(loadedSpaces);
       console.log(`✅ Loaded ${loadedSpaces.length} spaces (localStorage/mock)`);
 
-      // Auto-Sync Active Space
-      const storedActiveSpaceId = localStorage.getItem("aigendaActiveSpaceId");
+      // Auto-Sync Active Space - scoped to this workspace
+      const storedActiveSpaceId = loadActiveSpaceFromStorage(wsId);
       const spaceExists = loadedSpaces.some(s => String(s.id) === String(storedActiveSpaceId));
 
       if (storedActiveSpaceId && spaceExists) {
         setActiveSpaceId(storedActiveSpaceId);
+        saveActiveSpaceToStorage(wsId, storedActiveSpaceId);
       } else if (loadedSpaces.length > 0) {
         const defaultSpaceId = loadedSpaces[0].id;
         setActiveSpaceId(defaultSpaceId);
-        localStorage.setItem("aigendaActiveSpaceId", defaultSpaceId);
+        saveActiveSpaceToStorage(wsId, defaultSpaceId);
         console.log(`Auto-sync active space: Defaulted to first space: ${defaultSpaceId}`);
       } else {
         setActiveSpaceId(null);
-        localStorage.removeItem("aigendaActiveSpaceId");
+        saveActiveSpaceToStorage(wsId, null);
       }
     } catch (error) {
       console.error("❌ Error fetching spaces:", error);
@@ -417,7 +484,13 @@ export const SpacesProvider = ({ children, workspaceId }) => {
   // Triggered: When user clicks (+) in sidebar to create new space
   // Returns: The newly created space object
   // ============================================================================
-  const createSpace = useCallback(async (workspaceId, spaceData) => {
+  const createSpace = useCallback(async (workspaceIdParam, spaceData) => {
+    // Always use the current provider workspace to prevent cross-workspace contamination
+    if (!workspaceId) {
+      console.error("Cannot create space: no workspace ID available");
+      alert("Please select a workspace first.");
+      throw new Error("No workspace ID available");
+    }
     console.log(`✅ Creating new space in workspace: ${workspaceId}`, spaceData);
 
     try {
@@ -450,7 +523,7 @@ export const SpacesProvider = ({ children, workspaceId }) => {
       alert("Failed to create space.");
       throw error;
     }
-  }, []);
+  }, [workspaceId]);
 
   // ============================================================================
   // ACTION: UPDATE SPACE
@@ -506,13 +579,18 @@ export const SpacesProvider = ({ children, workspaceId }) => {
     setDeletedSpaces((prev) => {
       const spaceToRestore = prev.find((space) => space.id === spaceId);
       if (spaceToRestore) {
-        const restoredSpace = { ...spaceToRestore, status: "active", restoredAt: new Date().toISOString() };
-        setSpaces((prevSpaces) => [...prevSpaces, restoredSpace]);
-        console.log(`✅ Space restored: ${spaceId}`);
+        // Only restore into the current workspace's space list
+        if (String(spaceToRestore.workspaceId) === String(workspaceId)) {
+          const restoredSpace = { ...spaceToRestore, status: "active", restoredAt: new Date().toISOString() };
+          setSpaces((prevSpaces) => [...prevSpaces, restoredSpace]);
+          console.log(`✅ Space restored: ${spaceId}`);
+        } else {
+          console.warn(`Space ${spaceId} belongs to a different workspace; not restored to current view.`);
+        }
       }
       return prev.filter((space) => space.id !== spaceId);
     });
-  }, []);
+  }, [workspaceId]);
 
   // ============================================================================
   // ACTION: MOVE SPACE (Reorder)
@@ -770,12 +848,12 @@ export const SpacesProvider = ({ children, workspaceId }) => {
     console.log(`🎯 Selecting space: ${spaceId}`);
     setActiveSpaceId(spaceId);
     if (spaceId) {
-      localStorage.setItem("aigendaActiveSpaceId", spaceId);
+      saveActiveSpaceToStorage(workspaceId, spaceId);
     } else {
-      localStorage.removeItem("aigendaActiveSpaceId");
+      saveActiveSpaceToStorage(workspaceId, null);
     }
     setActiveTab("Tasks"); // Reset to Tasks tab when selecting a new space
-  }, []);
+  }, [workspaceId]);
 
   // ============================================================================
   // ACTION: SET ACTIVE TAB

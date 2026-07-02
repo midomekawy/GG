@@ -5,7 +5,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useTasks } from "../../context/TasksContext";
 import { useSpaces } from "../../context/SpacesContext";
 import { useWorkspace } from "../../context/WorkspaceContext";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import CreateNewTask from "../TaskComponent/CreateNewTask";
 import { Bell, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import FormatListBulletedRoundedIcon from "@mui/icons-material/FormatListBulletedRounded";
@@ -34,14 +34,13 @@ const getAssignees = (task) => {
 };
 
 const SpaceOverview = () => {
-  const { tasks, updateTask, fetchTasks, isLoading } = useTasks();
+  const { tasks, fetchTasks, isLoading, assignTask } = useTasks();
   const { spaces, activeSpaceId, getSpaceNotes, fetchSpaceNotes, notesLoading } = useSpaces();
   const { activeWorkspaceId } = useWorkspace();
   const navigate = useNavigate();
   const [openCreateTask, setOpenCreateTask] = useState(false);
   const [addUserState, setAddUserState] = useState({ taskId: null, value: '' });
   const [taskView, setTaskView] = useState("list");
-  const [openFocusMode, setOpenFocusMode] = useState(false);
 
   // Fetch tasks and notes when component mounts or when space changes
   useEffect(() => {
@@ -68,10 +67,15 @@ const SpaceOverview = () => {
     }
   };
 
-  // Helper function to map priority to urgency display
+  // Helper function to map priority to urgency display (accepts both numeric and string values)
   const getUrgencyDisplay = (priority) => {
-    if (priority === 2) return { level: 'Critical', color: '#ef4444' };
-    if (priority === 1) return { level: 'Moderate', color: '#f59e0b' };
+    const p = String(priority).toLowerCase();
+    if (priority === 3 || priority === '3' || p === 'critical' || p === 'high') {
+      return { level: 'Critical', color: '#ef4444' };
+    }
+    if (priority === 1 || priority === '1' || p === 'moderate' || p === 'medium' || p === 'med') {
+      return { level: 'Moderate', color: '#f59e0b' };
+    }
     return { level: 'Low', color: '#10b981' };
   };
 
@@ -485,8 +489,7 @@ const SpaceOverview = () => {
                                     if (e.key === 'Enter') {
                                       const newUser = addUserState.value.trim();
                                       if (newUser) {
-                                        const currentAssignees = getAssignees(task);
-                                        updateTask(activeWorkspaceId, activeSpaceId, task.id, { assignedTo: [...currentAssignees, newUser] });
+                                        assignTask(activeWorkspaceId, activeSpaceId, task.id, newUser);
                                       }
                                       setAddUserState({ taskId: null, value: '' });
                                     }
@@ -501,8 +504,7 @@ const SpaceOverview = () => {
                                   onClick={() => {
                                     const newUser = addUserState.value.trim();
                                     if (newUser) {
-                                      const currentAssignees = getAssignees(task);
-                                      updateTask(activeWorkspaceId, activeSpaceId, task.id, { assignedTo: [...currentAssignees, newUser] });
+                                      assignTask(activeWorkspaceId, activeSpaceId, task.id, newUser);
                                     }
                                     setAddUserState({ taskId: null, value: '' });
                                   }}

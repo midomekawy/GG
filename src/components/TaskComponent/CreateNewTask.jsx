@@ -5,10 +5,20 @@ import { useTasks } from '../../context/TasksContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useSpaces } from '../../context/SpacesContext';
 
+function getTomorrowDateInputValue() {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const year = tomorrow.getFullYear();
+    const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const day = String(tomorrow.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 const CreateNewTask = ({openCreateTask, setOpenCreateTask})=>{
     const { createTask } = useTasks();
     const { activeWorkspaceId } = useWorkspace();
     const { activeSpaceId, spaces } = useSpaces();
+    const minDueDate = getTomorrowDateInputValue();
 
     const [formData, setFormData] = useState({
         title: '',
@@ -25,6 +35,11 @@ const CreateNewTask = ({openCreateTask, setOpenCreateTask})=>{
 
         if (!formData.title.trim()) {
             alert('Please enter a task title');
+            return;
+        }
+
+        if (formData.dueDate && formData.dueDate < minDueDate) {
+            alert('Due date must be after today. Please choose a future date.');
             return;
         }
 
@@ -70,7 +85,8 @@ const CreateNewTask = ({openCreateTask, setOpenCreateTask})=>{
             setOpenCreateTask(false);
         } catch (error) {
             console.error('Error creating task:', error);
-            alert('Failed to create task');
+            const message = error?.message || error?.response?.data?.message || error?.response?.data?.title || 'Failed to create task';
+            alert(message);
         }
     };
 
@@ -144,6 +160,7 @@ const CreateNewTask = ({openCreateTask, setOpenCreateTask})=>{
                                         type='date'
                                         placeholder='DD/MM/YYYY'
                                         value={formData.dueDate}
+                                        min={minDueDate}
                                         onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
                                     />
                                 </div>
