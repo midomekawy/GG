@@ -820,11 +820,15 @@ export const appConnectionsAPI = {
   disconnectApp: (connectionId) =>
     api.delete(`/api/users/current/app-connections/${connectionId}`),
 
-  // POST start OAuth authorization for a provider (e.g. slack, github, google-calendar)
+  // POST start OAuth authorization for a provider (Swagger currently exposes github/google)
   authorizeProvider: (provider) =>
-    api.post(`/api/users/current/app-connections/authorize/${provider}`),
+    api.post(`/api/users/current/app-connections/authorize/${provider}`, null, {
+      params: { client: "web" },
+    }),
 
   // POST sync a connected app
-  syncConnection: (connectionId) =>
-    api.post(`/api/users/current/app-connections/${connectionId}/sync`),
+  syncConnection: (connectionId, forceFullSync = false) =>
+    api.post(`/api/users/current/app-connections/${connectionId}/sync`, {
+      forceFullSync,
+    }),
 };

@@ -21,6 +21,8 @@ const Chatbot = lazy(() => import('./components/ChatbotComponent/Chatbot'));
 const Analytics = lazy(() => import('./components/AnalyticsComponent/Dashboard'));
 const Community = lazy(() => import('./components/CommunityComponent/Community'));
 const Connect = lazy(() => import('./components/ConnectComponent/Connect'));
+const ConnectedAppsCallback = lazy(() => import('./components/ConnectComponent/ConnectedAppsCallback'));
+const IntegrationsSettings = lazy(() => import('./components/SettingsComponent/IntegrationsSettings'));
 const Profile = lazy(() => import('./components/ProfileComponent/Profile'));
 
 const Settings = lazy(() => import('./components/SettingsComponent/Settings'));
@@ -97,6 +99,7 @@ function App() {
                   <Route path="/settings" element={<Settings />}>
                     <Route index element={<NotificationsSettings />} />
                     <Route path="security" element={<SecuritySettings />} />
+                    <Route path="integrations" element={<IntegrationsSettings />} />
                     <Route path="help" element={<HelpSettings />} />
                     <Route path="updates" element={<UpdateSystemSettings />} />
                     <Route path="invite" element={<InviteFriendSettings />} />
@@ -107,6 +110,7 @@ function App() {
                   <Route path='/analytics' element={<Analytics />} />
                   <Route path='/community' element={<Community />} />
                   <Route path='/connect' element={<Connect />} />
+                  <Route path='/connected-apps' element={<ConnectedAppsCallback />} />
                   <Route path='/chatbot' element={<Chatbot />} />
                   <Route path='/profile' element={<Profile />} />
                   <Route path='/settAbout' element={<SettAbout />} />

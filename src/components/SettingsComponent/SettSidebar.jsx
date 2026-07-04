@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, HelpCircle, Home, Info, LogOut, RefreshCcw, Shield, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, Bell, HelpCircle, Home, Info, Link as LinkIcon, LogOut, RefreshCcw, Shield, UserPlus, Users } from "lucide-react";
 import './settings.css';
 import { NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -44,6 +44,10 @@ const SettSidebar = () => {
                 <NavLink to='security' className={({ isActive }) => isActive ? "settings-nav-item active" : "settings-nav-item"}>
                     <span className="icon"><Shield size={20} /></span>
                     <span>Security</span>
+                </NavLink>
+                <NavLink to='integrations' className={({ isActive }) => isActive ? "settings-nav-item active" : "settings-nav-item"}>
+                    <span className="icon"><LinkIcon size={20} /></span>
+                    <span>Integrations</span>
                 </NavLink>
                 <NavLink to='help' className={({ isActive }) => isActive ? "settings-nav-item active" : "settings-nav-item"}>
                     <span className="icon"><HelpCircle size={20} /></span>
